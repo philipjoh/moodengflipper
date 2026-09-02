@@ -138,10 +138,11 @@
   <div id="hud">
     <div>SCORE <span id="score">0</span></div>
     <div>BALLS <span id="lives">3</span></div>
+    <div>MB <span id="multiball">BUILD</span></div>
     <div id="tiltMeter">TILT<div class="bar"><div id="tiltFill"></div></div></div>
   </div>
   <div id="board">
-    <canvas id="game" width="500" height="840"></canvas>
+    <canvas id="game" width="580" height="840"></canvas>
     <div id="overlay">
       <h2 id="overlayTitle">Ready?</h2>
       <div id="overlaySub"></div>
@@ -172,6 +173,7 @@
 
   const scoreEl = document.getElementById('score');
   const livesEl = document.getElementById('lives');
+  const multiballEl = document.getElementById('multiball');
   const tiltFill = document.getElementById('tiltFill');
   const overlay = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlayTitle');
@@ -199,8 +201,8 @@
   const FLIP_DOWN_SPEED = 9;
 
   // Shooter lane: the strip right of LANE_X, with the plunger at the bottom.
-  const LANE_X = 416;
-  const LANE_CENTER = 449;
+  const LANE_X = 496;
+  const LANE_CENTER = 529;
   const PLUNGER_REST_Y = 800;
   const PLUNGER_TRAVEL = 52;
   const PLUNGER_MIN = 1320;   // weakest shot still dribbles out of the lane
@@ -232,7 +234,9 @@
   let hudTilt = -1;
 
   const shake = { x: 0, y: 0, vx: 0, vy: 0 };
-  const ball = { x: LANE_CENTER, y: PLUNGER_REST_Y - BALL_RADIUS, vx: 0, vy: 0, lean: 0 };
+  let ball = { x: LANE_CENTER, y: PLUNGER_REST_Y - BALL_RADIUS, vx: 0, vy: 0, lean: 0 };
+  const balls = [ball];
+  let multiballActive = false;
 
   function arcSegments(cx, cy, radius, a0, a1, steps, r) {
     const segs = [];
@@ -251,41 +255,41 @@
   // Static walls, defined as capsule line segments (thickness = radius).
   const staticWalls = [
     { x1: 18, y1: 100, x2: 18, y2: 592, r: 7 },        // left wall
-    { x1: 100, y1: 18, x2: 400, y2: 18, r: 7 },        // top wall
+    { x1: 100, y1: 18, x2: 480, y2: 18, r: 7 },        // top wall
     ...arcSegments(100, 100, 82, Math.PI, Math.PI * 1.5, 6, 7),      // top-left corner
-    ...arcSegments(400, 100, 82, Math.PI * 1.5, Math.PI * 2, 6, 7),  // top-right corner
-    { x1: 482, y1: 100, x2: 482, y2: 860, r: 7 },      // shooter lane outer wall
+    ...arcSegments(480, 100, 82, Math.PI * 1.5, Math.PI * 2, 6, 7),  // top-right corner
+    { x1: 562, y1: 100, x2: 562, y2: 860, r: 7 },      // shooter lane outer wall
     { x1: LANE_X, y1: 300, x2: LANE_X, y2: 860, r: 6 },// shooter lane divider
-    { x1: 18, y1: 592, x2: 101, y2: 722, r: 7 },       // left inlane guide
-    { x1: LANE_X, y1: 592, x2: 334, y2: 722, r: 7 },   // right inlane guide
-    { x1: 132, y1: 630, x2: 56, y2: 638, r: 6 },       // left slingshot underside
-    { x1: 302, y1: 630, x2: 378, y2: 638, r: 6 },      // right slingshot underside
+    { x1: 18, y1: 592, x2: 96, y2: 722, r: 7 },        // left inlane guide
+    { x1: LANE_X, y1: 592, x2: 419, y2: 722, r: 7 },   // right inlane guide
+    { x1: 150, y1: 630, x2: 56, y2: 638, r: 6 },       // left slingshot underside
+    { x1: 364, y1: 630, x2: 458, y2: 638, r: 6 },      // right slingshot underside
   ];
 
   // One-way gate at the lane exit: only solid for a ball falling back toward the
   // plunger, and sloped left so a resting ball rolls out into the playfield.
-  const laneGate = { x1: LANE_X, y1: 300, x2: 482, y2: 268, r: 5 };
+  const laneGate = { x1: LANE_X, y1: 300, x2: 562, y2: 268, r: 5 };
 
   const bumpers = [
-    { x: 217, y: 162, r: 27, hit: 0, color: '#ffe15f' },
-    { x: 148, y: 252, r: 27, hit: 0, color: '#ff5fb0' },
-    { x: 286, y: 252, r: 27, hit: 0, color: '#5fd6ff' },
-    { x: 217, y: 366, r: 24, hit: 0, color: '#c08dff' },
+    { x: 257, y: 162, r: 27, hit: 0, color: '#ffe15f' },
+    { x: 168, y: 252, r: 27, hit: 0, color: '#ff5fb0' },
+    { x: 346, y: 252, r: 27, hit: 0, color: '#5fd6ff' },
+    { x: 257, y: 366, r: 24, hit: 0, color: '#c08dff' },
     { x: 114, y: 476, r: 18, hit: 0, color: '#8dff5f' },
-    { x: 320, y: 476, r: 18, hit: 0, color: '#8dff5f' },
+    { x: 400, y: 476, r: 18, hit: 0, color: '#8dff5f' },
   ];
 
   const posts = [
-    { x: 217, y: 468, r: 13, hit: 0 },
-    { x: 160, y: 556, r: 12, hit: 0 },
-    { x: 274, y: 556, r: 12, hit: 0 },
-    { x: 217, y: 664, r: 12, hit: 0 },
+    { x: 257, y: 468, r: 13, hit: 0 },
+    { x: 136, y: 530, r: 12, hit: 0 },
+    { x: 378, y: 530, r: 12, hit: 0 },
+    { x: 257, y: 620, r: 11, hit: 0 },
   ];
 
   // a -> b is the kicking face; c closes the triangle for drawing.
   const slingshots = [
-    { a: { x: 56, y: 566 }, b: { x: 132, y: 630 }, c: { x: 56, y: 638 }, hit: 0 },
-    { a: { x: 378, y: 566 }, b: { x: 302, y: 630 }, c: { x: 378, y: 638 }, hit: 0 },
+    { a: { x: 56, y: 566 }, b: { x: 150, y: 630 }, c: { x: 56, y: 638 }, hit: 0 },
+    { a: { x: 458, y: 566 }, b: { x: 364, y: 630 }, c: { x: 458, y: 638 }, hit: 0 },
   ];
 
   function makeBank(x1, y1, x2, y2, count) {
@@ -304,16 +308,16 @@
 
   const banks = [
     makeBank(48, 300, 48, 432, 3),
-    makeBank(386, 300, 386, 432, 3),
+    makeBank(466, 300, 466, 432, 3),
   ];
 
   const flippers = {
     left: {
-      pivot: { x: 105, y: 726 }, len: 96, side: 1,
+      pivot: { x: 102, y: 726 }, len: 125, side: 1,
       restAngle: 0.52, activeAngle: -0.55, angle: 0.52, angVel: 0, active: false,
     },
     right: {
-      pivot: { x: 330, y: 726 }, len: 96, side: -1,
+      pivot: { x: 412, y: 726 }, len: 125, side: -1,
       restAngle: 0.52, activeAngle: -0.55, angle: 0.52, angVel: 0, active: false,
     },
   };
@@ -449,10 +453,22 @@
     plungerCharge = 0;
   }
 
+  function startMultiball() {
+    if (multiballActive) return;
+    multiballActive = true;
+    multiballEl.textContent = 'ACTIVE';
+    addScore(5000);
+    for (const [x, vx] of [[185, -210], [329, 210]]) {
+      balls.push({ x, y: 470, vx, vy: -720, lean: 0 });
+    }
+  }
+
   function nudge(dx, dy) {
     if (!running || serving || tilted || ballInLane || tiltCooldown > 0) return;
-    ball.vx += dx * NUDGE_VX;
-    ball.vy += dy * NUDGE_VY;
+    for (const activeBall of balls) {
+      activeBall.vx += dx * NUDGE_VX;
+      activeBall.vy += dy * NUDGE_VY;
+    }
     // The cabinet lurches the other way, so the ball appears to lag behind.
     shake.vx -= dx * 220;
     shake.vy -= dy * 220;
@@ -480,6 +496,8 @@
     tilted = false;
     tiltMeter = 0;
     tiltFlash = 0;
+    multiballActive = false;
+    multiballEl.textContent = 'BUILD';
     if (lives <= 0) {
       running = false;
       overlayTitle.textContent = 'Game Over';
@@ -488,6 +506,8 @@
       overlay.classList.add('show');
       return;
     }
+    ball = { x: LANE_CENTER, y: PLUNGER_REST_Y - BALL_RADIUS, vx: 0, vy: 0, lean: 0 };
+    balls.push(ball);
     serving = true;
     serveTimer = 0.8;
   }
@@ -532,12 +552,21 @@
     }
 
     if (ballInLane) {
+      ball = balls[0];
       if (plungerHeld) plungerCharge = Math.min(1, plungerCharge + CHARGE_RATE * dt);
       ball.x = LANE_CENTER;
       ball.y = plungerTopY() - BALL_RADIUS;
       return;
     }
 
+    for (let index = balls.length - 1; index >= 0; index--) {
+      ball = balls[index];
+      if (updateBall(dt)) balls.splice(index, 1);
+    }
+    if (balls.length === 0) loseLife();
+  }
+
+  function updateBall(dt) {
     ball.vy += GRAVITY * dt;
 
     const damp = 1 - DRAG * dt;
@@ -578,6 +607,11 @@
       if (bank.targets.every((t) => t.down)) {
         addScore(2500);
         bank.resetTimer = 1.2;
+        bank.qualified = true;
+        if (banks.every((otherBank) => otherBank.qualified)) {
+          startMultiball();
+          for (const otherBank of banks) otherBank.qualified = false;
+        }
       }
     }
 
@@ -602,14 +636,15 @@
 
     // A ball that finds its way back down the shooter lane lands on the plunger
     // instead of draining, so it just has to be launched again.
-    if (ball.vy >= 0 && ball.x > LANE_X + 12 && ball.y + BALL_RADIUS >= PLUNGER_REST_Y) {
+    if (!multiballActive && ball.vy >= 0 && ball.x > LANE_X + 12 && ball.y + BALL_RADIUS >= PLUNGER_REST_Y) {
       parkBallOnPlunger();
-      return;
+      return false;
     }
 
     if (ball.y - BALL_RADIUS > H) {
-      loseLife();
+      return true;
     }
+    return false;
   }
 
   function drawFlipper(f) {
@@ -646,7 +681,7 @@
   function drawWalls() {
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
-    ctx.fillRect(LANE_X, 268, 482 - LANE_X, H - 268);
+    ctx.fillRect(LANE_X, 268, 562 - LANE_X, H - 268);
     ctx.restore();
 
     for (const w of staticWalls) capsule(w.x1, w.y1, w.x2, w.y2, w.r, '#5a3f7a');
@@ -738,19 +773,19 @@
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.beginPath();
-    ctx.roundRect(60, 812, 300, 14, 7);
+    ctx.roundRect(100, 812, 315, 14, 7);
     ctx.fill();
     ctx.fillStyle = plungerCharge > 0.85 ? '#ff5fb0' : '#ffd76e';
     ctx.beginPath();
-    ctx.roundRect(60, 812, Math.max(4, 300 * plungerCharge), 14, 7);
+    ctx.roundRect(100, 812, Math.max(4, 315 * plungerCharge), 14, 7);
     ctx.fill();
     ctx.restore();
   }
 
-  function drawBall() {
+  function drawBall(activeBall) {
     ctx.save();
-    ctx.translate(ball.x, ball.y);
-    ctx.rotate(ball.lean);
+    ctx.translate(activeBall.x, activeBall.y);
+    ctx.rotate(activeBall.lean);
     ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
     ctx.shadowBlur = 10;
     ctx.shadowOffsetY = 3;
@@ -784,15 +819,15 @@
       ctx.font = 'bold 68px "Segoe UI", Arial, sans-serif';
       ctx.shadowColor = '#ff0000';
       ctx.shadowBlur = 24;
-      ctx.fillText('TILT', 217, 430);
+      ctx.fillText('TILT', 257, 430);
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#ffd0d0';
       ctx.font = 'bold 17px "Segoe UI", Arial, sans-serif';
-      ctx.fillText('flippers dead until the ball drains', 217, 462);
+      ctx.fillText('flippers dead until the ball drains', 257, 462);
     } else if (running && ballInLane) {
       ctx.fillStyle = '#ffd76e';
       ctx.font = 'bold 19px "Segoe UI", Arial, sans-serif';
-      ctx.fillText('HOLD SPACE \u2014 RELEASE TO LAUNCH', 217, 700);
+      ctx.fillText('HOLD SPACE \u2014 RELEASE TO LAUNCH', 257, 700);
     }
     ctx.restore();
   }
@@ -818,7 +853,7 @@
     drawPlunger();
     drawFlipper(flippers.left);
     drawFlipper(flippers.right);
-    if (!serving) drawBall();
+    if (!serving) for (const activeBall of balls) drawBall(activeBall);
 
     ctx.restore();
 
@@ -920,6 +955,7 @@
     for (const s of slingshots) s.hit = 0;
     for (const bank of banks) {
       bank.resetTimer = 0;
+      bank.qualified = false;
       for (const t of bank.targets) { t.down = false; t.hit = 0; }
     }
     tilted = false;
@@ -927,7 +963,11 @@
     tiltCooldown = 0;
     tiltFlash = 0;
     plungerHeld = false;
+    multiballActive = false;
+    multiballEl.textContent = 'BUILD';
     shake.x = shake.y = shake.vx = shake.vy = 0;
+    ball = { x: LANE_CENTER, y: PLUNGER_REST_Y - BALL_RADIUS, vx: 0, vy: 0, lean: 0 };
+    balls.splice(0, balls.length, ball);
     parkBallOnPlunger();
     serving = false;
     serveTimer = 0;
